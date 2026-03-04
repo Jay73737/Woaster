@@ -33,6 +33,79 @@ def _dark_titlebar(win):
     except Exception:
         pass
 
+class _Tooltip:
+    """
+    Dark-themed tooltip that appears after a short hover delay.
+    Usage: _Tooltip(widget, "text here")
+    """
+    _BG  = "#2d2d2d"
+    _FG  = "#d4d4d4"
+    _BD  = "#555555"
+    _PAD = 6
+    _DELAY = 550  # ms before showing
+
+    def __init__(self, widget: tk.Widget, text: str):
+        self._widget  = widget
+        self._text    = text
+        self._win: tk.Toplevel | None = None
+        self._after_id: str | None   = None
+        widget.bind("<Enter>",   self._on_enter,  add="+")
+        widget.bind("<Leave>",   self._on_leave,  add="+")
+        widget.bind("<Button>",  self._on_leave,  add="+")
+        widget.bind("<Destroy>", self._on_destroy, add="+")
+
+    def _on_enter(self, event):
+        self._cancel()
+        self._after_id = self._widget.after(self._DELAY, self._show)
+
+    def _on_leave(self, event=None):
+        self._cancel()
+        self._hide()
+
+    def _on_destroy(self, event=None):
+        self._cancel()
+        self._hide()
+
+    def _cancel(self):
+        if self._after_id:
+            try:
+                self._widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+    def _show(self):
+        self._hide()
+        try:
+            x = self._widget.winfo_rootx() + 4
+            y = self._widget.winfo_rooty() + self._widget.winfo_height() + 4
+        except Exception:
+            return
+        self._win = tk.Toplevel(self._widget)
+        self._win.wm_overrideredirect(True)
+        self._win.wm_geometry(f"+{x}+{y}")
+        self._win.configure(bg=self._BD)   # thin border via outer frame colour
+        frame = tk.Frame(self._win, bg=self._BG,
+                         highlightthickness=1, highlightbackground=self._BD)
+        frame.pack(padx=1, pady=1)
+        tk.Label(
+            frame, text=self._text,
+            bg=self._BG, fg=self._FG,
+            font=("Segoe UI", 9),
+            wraplength=340,
+            justify="left",
+            padx=self._PAD, pady=self._PAD,
+        ).pack()
+
+    def _hide(self):
+        if self._win:
+            try:
+                self._win.destroy()
+            except Exception:
+                pass
+            self._win = None
+
+
 DEFAULT_FILE = Path(__file__).parent / "app_list.json"
 
 # Winget ID prefixes and name patterns for built-in Windows / Microsoft system apps.
@@ -428,33 +501,31 @@ class App(tk.Tk):
         # ── Toolbar: grouped sections ─────────────────────────────────────────
         toolbar = ttk.Frame(self)
         toolbar.pack(fill="x", padx=8, pady=(8, 4))
+        T = self._HELP_TOPICS  # shorthand
 
         # Google Drive
         grp_drive = ttk.LabelFrame(toolbar, text="Google Drive")
         grp_drive.pack(side="left", padx=(0, 6), pady=2)
-        ttk.Button(grp_drive, text="Setup",          command=self._on_setup_drive).pack(side="left", padx=2, pady=2)
-        ttk.Button(grp_drive, text="Save",           command=self._on_save_drive).pack(side="left", padx=2, pady=2)
-        ttk.Button(grp_drive, text="Load & Install", command=self._on_load_drive_install).pack(side="left", padx=2, pady=2)
+        b = ttk.Button(grp_drive, text="Setup",          command=self._on_setup_drive); b.pack(side="left", padx=2, pady=2); _Tooltip(b, T["Setup Google Drive"])
+        b = ttk.Button(grp_drive, text="Save",           command=self._on_save_drive);  b.pack(side="left", padx=2, pady=2); _Tooltip(b, T["Save to Drive"])
+        b = ttk.Button(grp_drive, text="Load & Install", command=self._on_load_drive_install); b.pack(side="left", padx=2, pady=2); _Tooltip(b, T["Load from Drive & Install"])
 
         # Local — app list only
         grp_local = ttk.LabelFrame(toolbar, text="Local List")
         grp_local.pack(side="left", padx=(0, 6), pady=2)
-        ttk.Button(grp_local, text="Save",           command=self._on_save).pack(side="left", padx=2, pady=2)
-        ttk.Button(grp_local, text="Load & Install", command=self._on_load_install).pack(side="left", padx=2, pady=2)
+        b = ttk.Button(grp_local, text="Save",           command=self._on_save);         b.pack(side="left", padx=2, pady=2); _Tooltip(b, T["Save Local"])
+        b = ttk.Button(grp_local, text="Load & Install", command=self._on_load_install); b.pack(side="left", padx=2, pady=2); _Tooltip(b, T["Load Local & Install"])
 
         # Full backup — app list + AppData + registry
         grp_full = ttk.LabelFrame(toolbar, text="Full Backup  (List + App Data)")
         grp_full.pack(side="left", padx=(0, 6), pady=2)
-        ttk.Button(grp_full, text="Save",           command=self._on_full_save).pack(side="left", padx=2, pady=2)
-        ttk.Button(grp_full, text="Load & Install", command=self._on_full_load_install).pack(side="left", padx=2, pady=2)
+        b = ttk.Button(grp_full, text="Save",           command=self._on_full_save);          b.pack(side="left", padx=2, pady=2); _Tooltip(b, T["Full Backup: Save"])
+        b = ttk.Button(grp_full, text="Load & Install", command=self._on_full_load_install);  b.pack(side="left", padx=2, pady=2); _Tooltip(b, T["Full Backup: Load & Install"])
 
         # Personal files backup
         grp_files = ttk.LabelFrame(toolbar, text="My Files")
         grp_files.pack(side="left", padx=(0, 6), pady=2)
-        ttk.Button(grp_files, text="Backup", command=self._on_backup_files).pack(side="left", padx=2, pady=2)
-
-        # Help — far right
-        ttk.Button(toolbar, text="?", command=self._on_help, width=3).pack(side="right", padx=4, pady=4)
+        b = ttk.Button(grp_files, text="Backup", command=self._on_backup_files); b.pack(side="left", padx=2, pady=2); _Tooltip(b, T["Backup Files"])
 
         # Info bar
         info_frame = ttk.LabelFrame(self, text="Quick guide")
@@ -474,22 +545,23 @@ class App(tk.Tk):
         list_bar = ttk.Frame(self)
         list_bar.pack(fill="x", padx=8, pady=(6, 2))
 
-        ttk.Button(list_bar, text="Scan Programs", command=self._on_scan).pack(side="left", padx=2)
-        ttk.Button(list_bar, text="Select All", command=self._select_all).pack(side="left", padx=2)
-        ttk.Button(list_bar, text="Deselect All", command=self._deselect_all).pack(side="left", padx=2)
+        T = self._HELP_TOPICS
+        b = ttk.Button(list_bar, text="Scan Programs", command=self._on_scan);    b.pack(side="left", padx=2); _Tooltip(b, T["Scan Programs"])
+        b = ttk.Button(list_bar, text="Select All",   command=self._select_all);  b.pack(side="left", padx=2); _Tooltip(b, T["Select All / Deselect All"])
+        b = ttk.Button(list_bar, text="Deselect All", command=self._deselect_all); b.pack(side="left", padx=2); _Tooltip(b, T["Select All / Deselect All"])
         ttk.Separator(list_bar, orient="vertical").pack(side="left", fill="y", padx=6)
 
-        ttk.Label(list_bar, text="Filter:").pack(side="left")
+        lbl = ttk.Label(list_bar, text="Filter:"); lbl.pack(side="left"); _Tooltip(lbl, T["Filter"])
         self.filter_var = tk.StringVar()
         self.filter_var.trace_add("write", lambda *_: self._refresh_tree())
-        ttk.Entry(list_bar, textvariable=self.filter_var).pack(side="left", fill="x", expand=True, padx=4)
+        fe = ttk.Entry(list_bar, textvariable=self.filter_var); fe.pack(side="left", fill="x", expand=True, padx=4); _Tooltip(fe, T["Filter"])
 
         self.show_builtins = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        cb = ttk.Checkbutton(
             list_bar, text="Show Windows built-ins",
             variable=self.show_builtins,
             command=self._on_scan,
-        ).pack(side="left")
+        ); cb.pack(side="left"); _Tooltip(cb, T["Show Windows built-ins"])
 
         # Treeview
         cols = ("selected", "name", "winget_id")
@@ -942,6 +1014,22 @@ class App(tk.Tk):
     # ── Help ───────────────────────────────────────────────────────────
 
     _HELP_TOPICS = {
+        "Full Backup: Save": (
+            "Saves your selected app list AND each app\u2019s settings/data to a folder "
+            "you choose (e.g. an external drive).\n\n"
+            "What gets saved:\n"
+            "  \u2022 app_list.json \u2014 the list of programs\n"
+            "  \u2022 AppData\\Roaming, AppData\\Local, ProgramData folders for each app\n"
+            "  \u2022 HKCU registry keys for each app\n\n"
+            "Incremental: re-running only copies files that are new or changed, "
+            "so it\u2019s fast and safe to repeat."
+        ),
+        "Full Backup: Load & Install": (
+            "Reinstalls all apps via winget, then automatically restores "
+            "each app\u2019s AppData folders and registry keys from the folder "
+            "created by Full Backup \u2192 Save.\n\n"
+            "Use this after a Windows reset to get everything back exactly as it was."
+        ),
         "Scan Programs": (
             "Scans your computer for all programs installed via winget.\n\n"
             "Windows built-in apps and drivers are filtered out by default "
@@ -1000,33 +1088,6 @@ class App(tk.Tk):
             "Use this before a Windows reset to preserve your personal files."
         ),
     }
-
-    def _on_help(self):
-        win = tk.Toplevel(self)
-        win.title("Help")
-        win.geometry("560x420")
-        win.transient(self)
-        win.configure(bg=self._BG)
-        win.bind("<Map>", lambda _: (_dark_titlebar(win), win.unbind("<Map>")))
-
-        left = ttk.Frame(win, width=180)
-        left.pack(side="left", fill="y", padx=(8, 0), pady=8)
-        left.pack_propagate(False)
-
-        ttk.Label(left, text="Click a feature:", font=("", 10, "bold")).pack(anchor="w", pady=(0, 6))
-
-        right = ttk.Frame(win)
-        right.pack(side="left", fill="both", expand=True, padx=8, pady=8)
-
-        detail_var = tk.StringVar(value="Select a feature on the left to see its description.")
-        detail_label = ttk.Label(right, textvariable=detail_var, wraplength=340, justify="left")
-        detail_label.pack(anchor="nw", fill="both", expand=True)
-
-        for topic, desc in self._HELP_TOPICS.items():
-            ttk.Button(
-                left, text=topic,
-                command=lambda d=desc, t=topic: detail_var.set(f"{t}\n\n{d}"),
-            ).pack(fill="x", pady=1)
 
 
 if __name__ == "__main__":

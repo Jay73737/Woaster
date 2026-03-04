@@ -13,6 +13,8 @@ A dark-themed desktop tool for backing up your installed programs and files befo
 - **Save / Load Locally** — export your list to a JSON file on a USB drive or external storage
 - **One-click Reinstall** — loads a saved list and reinstalls every app via `winget` automatically
 - **Backup Files** — browse your user profile folder, select folders to back up, and copy them to an external drive
+- **Full Save Local** — saves the app list *and* each app's AppData folders (Roaming, Local, ProgramData) plus HKCU registry keys to a folder you choose; **incremental** — re-running only copies files that are new or have changed
+- **Full Load & Install** — reinstalls all apps via winget then automatically restores AppData and registry from a previous Full Save
 - **Dark mode UI** throughout
 
 ---
@@ -27,6 +29,7 @@ A dark-themed desktop tool for backing up your installed programs and files befo
 4. Save your list:
    - **Save to Drive** — uploads to your Google Drive (requires one-time setup, see below)
    - **Save Local** — saves a `app_list.json` file; put it on a USB drive
+   - **Full Save Local** — saves the app list **and** all app data to a folder on an external drive (incremental; safe to re-run)
 5. Click **Backup Files**, select important folders, and copy them to an external drive
 
 ### After a Windows reset
@@ -35,6 +38,7 @@ A dark-themed desktop tool for backing up your installed programs and files befo
 2. Restore your apps:
    - **Load from Drive & Install** — downloads your list from Google Drive and installs everything
    - **Load Local & Install** — point it to your saved JSON file and it installs everything
+   - **Full Load & Install** — point it to the folder created by Full Save; reinstalls all apps *and* restores their AppData and registry
 
 ---
 
@@ -59,7 +63,7 @@ No billing is required. The file is stored as `windows_app_reinstaller_list.json
 |---|---|
 | Version | 1.0.0 |
 | Size | ~33 MB |
-| MD5 | `8BE60CBD3931D3D70E7369E85545C39B` |
+| MD5 | `DE2885B6277E2762B050DE34E310185C` |
 
 You can verify the integrity of the download by running:
 ```powershell

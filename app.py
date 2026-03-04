@@ -17,6 +17,7 @@ import webbrowser
 from tkinter import ttk, filedialog, messagebox
 from pathlib import Path
 from drive_sync import save_to_drive, load_from_drive, has_client_secret, import_client_secret
+from app_data import backup_app_data, restore_app_data
 
 
 def _dark_titlebar(win):
@@ -435,6 +436,9 @@ class App(tk.Tk):
         ttk.Button(toolbar, text="Save Local", command=self._on_save).pack(side="left", padx=2)
         ttk.Button(toolbar, text="Load Local & Install", command=self._on_load_install).pack(side="left", padx=2)
         ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=6)
+        ttk.Button(toolbar, text="Full Save Local", command=self._on_full_save).pack(side="left", padx=2)
+        ttk.Button(toolbar, text="Full Load & Install", command=self._on_full_load_install).pack(side="left", padx=2)
+        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=6)
         ttk.Button(toolbar, text="Help", command=self._on_help).pack(side="left", padx=2)
         ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=6)
         ttk.Button(toolbar, text="Backup Files", command=self._on_backup_files).pack(side="left", padx=2)
@@ -455,6 +459,16 @@ class App(tk.Tk):
             text=(
                 "Option 2: Save Local — save the list as a JSON file to a USB drive or "
                 "other removable/external storage, then load it after the reset."
+            ),
+            wraplength=780, justify="left",
+        ).pack(anchor="w", padx=6, pady=(0, 0))
+        ttk.Label(
+            info_frame,
+            text=(
+                "Option 3: Full Save Local — saves the app list AND copies each app\u2019s "
+                "AppData folders (Roaming, Local, ProgramData) plus HKCU registry keys to a "
+                "folder you choose. Full Load & Install reinstalls all apps via winget and "
+                "restores their data automatically."
             ),
             wraplength=780, justify="left",
         ).pack(anchor="w", padx=6, pady=(0, 4))
@@ -599,6 +613,153 @@ class App(tk.Tk):
         self.after(0, _show_results)
 
     # ── Local save/load ────────────────────────────────────────────────
+
+    # ── full save / full restore ─────────────────────────────────────────────
+
+    def _on_full_save(self):
+        if not self.apps:
+            messagebox.showwarning("Nothing to save", "Scan for programs first.")
+            return
+        folder = filedialog.askdirectory(title="Choose folder for Full Save")
+        if not folder:
+            return
+        dest = Path(folder)
+        selected = self._get_selected_apps()
+        # Write quick app list so restore can find it
+        (dest / "app_list.json").write_text(json.dumps(selected, indent=2), encoding="utf-8")
+        self._run_full_backup(selected, dest)
+
+    def _run_full_backup(self, apps: list, dest: Path):
+        """Open a progress window and run backup_app_data in a background thread."""
+        win = tk.Toplevel(self)
+        win.title("Full Save — Backing up app data…")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        _dark_titlebar(win)
+        self.after(50, lambda: _dark_titlebar(win))
+
+        msg_var = tk.StringVar(value="Starting…")
+        prog_var = tk.IntVar(value=0)
+
+        ttk.Label(win, text="Saving app list and application data:").pack(padx=16, pady=(12, 4))
+        ttk.Label(win, textvariable=msg_var, wraplength=400).pack(padx=16)
+        bar = ttk.Progressbar(win, variable=prog_var, maximum=max(len(apps), 1))
+        bar.pack(fill="x", padx=16, pady=8)
+
+        def _progress(cur, total, msg):
+            prog_var.set(cur)
+            bar.config(maximum=max(total, 1))
+            msg_var.set(msg)
+            win.update_idletasks()
+
+        def _worker():
+            try:
+                backup_app_data(apps, dest, progress_cb=_progress)
+                self.after(0, lambda: (
+                    messagebox.showinfo(
+                        "Full Save Complete",
+                        f"App list + data saved to:\n{dest}",
+                        parent=win,
+                    ),
+                    win.destroy(),
+                    self.status_var.set(f"Full save complete → {dest}"),
+                ))
+            except Exception as exc:
+                self.after(0, lambda: (
+                    messagebox.showerror("Error", str(exc), parent=win),
+                    win.destroy(),
+                ))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_full_load_install(self):
+        folder = filedialog.askdirectory(title="Choose Full Save folder to restore from")
+        if not folder:
+            return
+        dest = Path(folder)
+        list_file = dest / "app_list.json"
+        if not list_file.exists():
+            messagebox.showerror(
+                "Invalid folder",
+                "No app_list.json found in that folder.\n"
+                "Please select the folder created by \"Full Save Local\"."
+            )
+            return
+        data = json.loads(list_file.read_text(encoding="utf-8"))
+        winget_apps = [a for a in data if a.get("winget_id")]
+
+        msg = (
+            f"{len(winget_apps)} apps will be installed via winget, "
+            "then their AppData and registry will be restored.\n\nProceed?"
+        )
+        if not messagebox.askyesno("Confirm Full Restore", msg):
+            return
+
+        self.status_var.set("Full restore: installing apps…")
+        self.update_idletasks()
+
+        def _worker():
+            # Step 1: install apps
+            self._do_install_list(winget_apps)
+            # Step 2: restore data
+            self.after(0, lambda: self._run_full_restore(dest))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _run_full_restore(self, backup_root: Path):
+        """Open a progress window and run restore_app_data in a background thread."""
+        win = tk.Toplevel(self)
+        win.title("Full Restore — Restoring app data…")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+        _dark_titlebar(win)
+        self.after(50, lambda: _dark_titlebar(win))
+
+        msg_var = tk.StringVar(value="Starting…")
+        prog_var = tk.IntVar(value=0)
+
+        ttk.Label(win, text="Restoring application data:").pack(padx=16, pady=(12, 4))
+        ttk.Label(win, textvariable=msg_var, wraplength=400).pack(padx=16)
+        bar = ttk.Progressbar(win, variable=prog_var)
+        bar.pack(fill="x", padx=16, pady=8)
+
+        def _progress(cur, total, msg):
+            prog_var.set(cur)
+            bar.config(maximum=max(total, 1))
+            msg_var.set(msg)
+            win.update_idletasks()
+
+        def _worker():
+            try:
+                errors = restore_app_data(backup_root, progress_cb=_progress)
+                def _done():
+                    if errors:
+                        detail = "\n".join(errors[:10])
+                        if len(errors) > 10:
+                            detail += f"\n… and {len(errors) - 10} more"
+                        messagebox.showwarning(
+                            "Restore Complete (with errors)",
+                            f"Some items could not be restored:\n\n{detail}",
+                            parent=win,
+                        )
+                    else:
+                        messagebox.showinfo(
+                            "Restore Complete",
+                            "All app data restored successfully.",
+                            parent=win,
+                        )
+                    win.destroy()
+                    self.status_var.set("Full restore complete.")
+                self.after(0, _done)
+            except Exception as exc:
+                self.after(0, lambda: (
+                    messagebox.showerror("Error", str(exc), parent=win),
+                    win.destroy(),
+                ))
+
+        threading.Thread(target=_worker, daemon=True).start()
 
     def _on_save(self):
         if not self.apps:

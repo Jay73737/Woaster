@@ -1,0 +1,16 @@
+# Credentials & tokens — never commit these
+client_secret*.json
+token*.json
+
+# Runtime data
+app_list.json
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Build output
+dist/
+build/
+*.spec

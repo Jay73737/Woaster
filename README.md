@@ -51,6 +51,23 @@ No billing is required. The file is stored as `windows_app_reinstaller_list.json
 
 ---
 
+## Download
+
+**[Woaster.exe](Woaster.exe)**
+
+| Property | Value |
+|---|---|
+| Version | 1.0.0 |
+| Size | ~33 MB |
+| MD5 | `8BE60CBD3931D3D70E7369E85545C39B` |
+
+You can verify the integrity of the download by running:
+```powershell
+Get-FileHash Woaster.exe -Algorithm MD5
+```
+
+---
+
 ## Requirements
 
 - Windows 10 (1809+) or Windows 11

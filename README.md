@@ -63,7 +63,7 @@ No billing is required. The file is stored as `windows_app_reinstaller_list.json
 |---|---|
 | Version | 1.0.0 |
 | Size | ~33 MB |
-| MD5 | `1D32C1ACD956BD04A77AB09C203FED02` |
+| MD5 | `3D28FCE12E68D0C862FD269DDDB9709D` |
 
 You can verify the integrity of the download by running:
 ```powershell

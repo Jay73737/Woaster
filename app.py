@@ -425,57 +425,50 @@ class App(tk.Tk):
                 bg=self._BG,
             ).pack(side="left")
 
-        # Save/load toolbar — row 1: cloud + local save/load
+        # ── Toolbar: grouped sections ─────────────────────────────────────────
         toolbar = ttk.Frame(self)
-        toolbar.pack(fill="x", padx=8, pady=(8, 2))
+        toolbar.pack(fill="x", padx=8, pady=(8, 4))
 
-        ttk.Button(toolbar, text="Setup Google Drive", command=self._on_setup_drive).pack(side="left", padx=2)
-        ttk.Button(toolbar, text="Save to Drive", command=self._on_save_drive).pack(side="left", padx=2)
-        ttk.Button(toolbar, text="Load from Drive & Install", command=self._on_load_drive_install).pack(side="left", padx=2)
-        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=6)
-        ttk.Button(toolbar, text="Save Local", command=self._on_save).pack(side="left", padx=2)
-        ttk.Button(toolbar, text="Load Local & Install", command=self._on_load_install).pack(side="left", padx=2)
-        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=6)
-        ttk.Button(toolbar, text="Help", command=self._on_help).pack(side="left", padx=2)
+        # Google Drive
+        grp_drive = ttk.LabelFrame(toolbar, text="Google Drive")
+        grp_drive.pack(side="left", padx=(0, 6), pady=2)
+        ttk.Button(grp_drive, text="Setup",          command=self._on_setup_drive).pack(side="left", padx=2, pady=2)
+        ttk.Button(grp_drive, text="Save",           command=self._on_save_drive).pack(side="left", padx=2, pady=2)
+        ttk.Button(grp_drive, text="Load & Install", command=self._on_load_drive_install).pack(side="left", padx=2, pady=2)
 
-        # toolbar row 2: full backup / file backup
-        toolbar2 = ttk.Frame(self)
-        toolbar2.pack(fill="x", padx=8, pady=(2, 4))
+        # Local — app list only
+        grp_local = ttk.LabelFrame(toolbar, text="Local List")
+        grp_local.pack(side="left", padx=(0, 6), pady=2)
+        ttk.Button(grp_local, text="Save",           command=self._on_save).pack(side="left", padx=2, pady=2)
+        ttk.Button(grp_local, text="Load & Install", command=self._on_load_install).pack(side="left", padx=2, pady=2)
 
-        ttk.Button(toolbar2, text="Full Save Local", command=self._on_full_save).pack(side="left", padx=2)
-        ttk.Button(toolbar2, text="Full Load & Install", command=self._on_full_load_install).pack(side="left", padx=2)
-        ttk.Separator(toolbar2, orient="vertical").pack(side="left", fill="y", padx=6)
-        ttk.Button(toolbar2, text="Backup Files", command=self._on_backup_files).pack(side="left", padx=2)
+        # Full backup — app list + AppData + registry
+        grp_full = ttk.LabelFrame(toolbar, text="Full Backup  (List + App Data)")
+        grp_full.pack(side="left", padx=(0, 6), pady=2)
+        ttk.Button(grp_full, text="Save",           command=self._on_full_save).pack(side="left", padx=2, pady=2)
+        ttk.Button(grp_full, text="Load & Install", command=self._on_full_load_install).pack(side="left", padx=2, pady=2)
 
-        # Info bar — save options
-        info_frame = ttk.LabelFrame(self, text="How to save your app list")
+        # Personal files backup
+        grp_files = ttk.LabelFrame(toolbar, text="My Files")
+        grp_files.pack(side="left", padx=(0, 6), pady=2)
+        ttk.Button(grp_files, text="Backup", command=self._on_backup_files).pack(side="left", padx=2, pady=2)
+
+        # Help — far right
+        ttk.Button(toolbar, text="?", command=self._on_help, width=3).pack(side="right", padx=4, pady=4)
+
+        # Info bar
+        info_frame = ttk.LabelFrame(self, text="Quick guide")
         info_frame.pack(fill="x", padx=8, pady=(4, 2))
         ttk.Label(
             info_frame,
             text=(
-                "Option 1: Save to Google Drive — your list is stored in the cloud and "
-                "can be loaded on any PC after a Windows reset. Requires a free Google Cloud setup."
+                "Google Drive \u2014 store your app list in the cloud; accessible from any PC after a reset (one-time setup required).\n"
+                "Local List \u2014 save just the app list to a JSON file on a USB drive or external storage.\n"
+                "Full Backup \u2014 saves the app list AND each app\u2019s settings/data (AppData + registry); incremental, safe to re-run.\n"
+                "My Files \u2014 browse your personal folders and copy them to an external drive."
             ),
-            wraplength=780, justify="left",
-        ).pack(anchor="w", padx=6, pady=(4, 0))
-        ttk.Label(
-            info_frame,
-            text=(
-                "Option 2: Save Local — save the list as a JSON file to a USB drive or "
-                "other removable/external storage, then load it after the reset."
-            ),
-            wraplength=780, justify="left",
-        ).pack(anchor="w", padx=6, pady=(0, 0))
-        ttk.Label(
-            info_frame,
-            text=(
-                "Option 3: Full Save Local — saves the app list AND copies each app\u2019s "
-                "AppData folders (Roaming, Local, ProgramData) plus HKCU registry keys to a "
-                "folder you choose. Full Load & Install reinstalls all apps via winget and "
-                "restores their data automatically."
-            ),
-            wraplength=780, justify="left",
-        ).pack(anchor="w", padx=6, pady=(0, 4))
+            wraplength=820, justify="left",
+        ).pack(anchor="w", padx=6, pady=4)
 
         # List controls bar (scan, filter, select)
         list_bar = ttk.Frame(self)

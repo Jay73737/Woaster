@@ -425,9 +425,9 @@ class App(tk.Tk):
                 bg=self._BG,
             ).pack(side="left")
 
-        # Save/load toolbar
+        # Save/load toolbar — row 1: cloud + local save/load
         toolbar = ttk.Frame(self)
-        toolbar.pack(fill="x", padx=8, pady=(8, 4))
+        toolbar.pack(fill="x", padx=8, pady=(8, 2))
 
         ttk.Button(toolbar, text="Setup Google Drive", command=self._on_setup_drive).pack(side="left", padx=2)
         ttk.Button(toolbar, text="Save to Drive", command=self._on_save_drive).pack(side="left", padx=2)
@@ -436,12 +436,16 @@ class App(tk.Tk):
         ttk.Button(toolbar, text="Save Local", command=self._on_save).pack(side="left", padx=2)
         ttk.Button(toolbar, text="Load Local & Install", command=self._on_load_install).pack(side="left", padx=2)
         ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=6)
-        ttk.Button(toolbar, text="Full Save Local", command=self._on_full_save).pack(side="left", padx=2)
-        ttk.Button(toolbar, text="Full Load & Install", command=self._on_full_load_install).pack(side="left", padx=2)
-        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=6)
         ttk.Button(toolbar, text="Help", command=self._on_help).pack(side="left", padx=2)
-        ttk.Separator(toolbar, orient="vertical").pack(side="left", fill="y", padx=6)
-        ttk.Button(toolbar, text="Backup Files", command=self._on_backup_files).pack(side="left", padx=2)
+
+        # toolbar row 2: full backup / file backup
+        toolbar2 = ttk.Frame(self)
+        toolbar2.pack(fill="x", padx=8, pady=(2, 4))
+
+        ttk.Button(toolbar2, text="Full Save Local", command=self._on_full_save).pack(side="left", padx=2)
+        ttk.Button(toolbar2, text="Full Load & Install", command=self._on_full_load_install).pack(side="left", padx=2)
+        ttk.Separator(toolbar2, orient="vertical").pack(side="left", fill="y", padx=6)
+        ttk.Button(toolbar2, text="Backup Files", command=self._on_backup_files).pack(side="left", padx=2)
 
         # Info bar — save options
         info_frame = ttk.LabelFrame(self, text="How to save your app list")

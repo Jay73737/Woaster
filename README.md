@@ -8,13 +8,13 @@ A dark-themed desktop tool for backing up your installed programs and files befo
 
 ## Features
 
-- **Scan Programs** — detects all winget-installable apps on your machine, filtering out built-in Windows components
+- **Scan Programs** — detects apps that can actually be restored: exact winget packages plus Steam games, while filtering out built-in Windows components
 - **Save / Load via Google Drive** — store your app list in the cloud so it survives a wipe and can be loaded on any PC
 - **Save / Load Locally** — export your list to a JSON file on a USB drive or external storage
-- **One-click Reinstall** — loads a saved list and reinstalls every app via `winget` automatically
+- **One-click Reinstall** — loads a saved list, reinstalls exact winget apps automatically, then queues Steam games in Steam
 - **Backup Files** — browse your user profile folder, select folders to back up, and copy them to an external drive
 - **Full Save Local** — saves the app list *and* each app's AppData folders (Roaming, Local, ProgramData) plus HKCU registry keys to a folder you choose; **incremental** — re-running only copies files that are new or have changed
-- **Full Load & Install** — reinstalls all apps via winget then automatically restores AppData and registry from a previous Full Save
+- **Full Load & Install** — reinstalls exact winget apps, queues Steam games in Steam, then automatically restores AppData and registry from a previous Full Save
 - **Dark mode UI** throughout
 
 ---
@@ -24,7 +24,7 @@ A dark-themed desktop tool for backing up your installed programs and files befo
 ### Before a Windows reset
 
 1. Launch `Woaster.exe`
-2. Click **Scan Programs** to detect installed apps
+2. Click **Scan Programs** to detect restore-ready apps and Steam games
 3. Uncheck anything you don't want to restore
 4. Save your list:
    - **Save to Drive** — uploads to your Google Drive (requires one-time setup, see below)
@@ -36,9 +36,9 @@ A dark-themed desktop tool for backing up your installed programs and files befo
 
 1. Launch `Woaster.exe` on the fresh install
 2. Restore your apps:
-   - **Load from Drive & Install** — downloads your list from Google Drive and installs everything
-   - **Load Local & Install** — point it to your saved JSON file and it installs everything
-   - **Full Load & Install** — point it to the folder created by Full Save; reinstalls all apps *and* restores their AppData and registry
+   - **Load from Drive & Install** — downloads your list from Google Drive, installs exact winget packages, then queues Steam games in Steam
+   - **Load Local & Install** — point it to your saved JSON file and it restores the same way
+   - **Full Load & Install** — point it to the folder created by Full Save; reinstalls exact winget apps, queues Steam games in Steam, and restores their AppData and registry
 
 ---
 

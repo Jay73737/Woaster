@@ -8,9 +8,12 @@ Windows App Reinstaller
 
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 import ctypes
 import tkinter as tk
 import webbrowser
@@ -107,6 +110,8 @@ class _Tooltip:
 
 
 DEFAULT_FILE = Path(__file__).parent / "app_list.json"
+STEAM_WINGET_ID = "Valve.Steam"
+_STEAM_APP_RE = re.compile(r"^ARP\\Machine(?:\\X64|\\X86)?\\Steam App (\d+)$", re.IGNORECASE)
 
 # Winget ID prefixes and name patterns for built-in Windows / Microsoft system apps.
 # These ship with Windows and get restored automatically after a reset.
@@ -350,16 +355,90 @@ def _is_windows_builtin(name: str, winget_id: str | None) -> bool:
     return False
 
 
+def _extract_steam_appid(winget_id: str | None) -> str | None:
+    """Return the Steam AppID from an ARP-style Steam entry, if present."""
+    if not winget_id:
+        return None
+    match = _STEAM_APP_RE.match(winget_id)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _scan_exported_winget_ids() -> set[str]:
+    """Return the set of package identifiers that winget can export/reinstall."""
+    export_path = Path(tempfile.gettempdir()) / f"woaster-winget-export-{os.getpid()}.json"
+    try:
+        if export_path.exists():
+            export_path.unlink()
+        subprocess.run(
+            ["winget", "export", "-o", str(export_path), "--include-versions", "--disable-interactivity"],
+            capture_output=True, text=True, timeout=180,
+        )
+        if not export_path.exists():
+            return set()
+        data = json.loads(export_path.read_text(encoding="utf-8-sig"))
+        ids: set[str] = set()
+        for source in data.get("Sources", []):
+            for package in source.get("Packages", []):
+                package_id = package.get("PackageIdentifier")
+                if package_id:
+                    ids.add(package_id)
+        return ids
+    except Exception:
+        return set()
+    finally:
+        try:
+            if export_path.exists():
+                export_path.unlink()
+        except OSError:
+            pass
+
+
+def _install_type(app: dict) -> str:
+    """Return the install mechanism for a saved app entry."""
+    if app.get("install_type"):
+        return app["install_type"]
+    if app.get("steam_appid"):
+        return "steam_game"
+    if app.get("winget_id"):
+        return "winget"
+    return ""
+
+
+def _display_target(app: dict) -> str:
+    """Return the text shown in the install target column."""
+    install_type = _install_type(app)
+    if install_type == "steam_game":
+        return f"Steam App {app.get('steam_appid', '')}"
+    return app.get("winget_id", "")
+
+
+def _summarize_install_plan(apps: list[dict]) -> tuple[int, int]:
+    """Return (winget_count, steam_game_count) for a list of saved app entries."""
+    winget_count = 0
+    steam_game_count = 0
+    for app in apps:
+        install_type = _install_type(app)
+        if install_type == "steam_game" and app.get("steam_appid"):
+            steam_game_count += 1
+        elif install_type == "winget" and app.get("winget_id"):
+            winget_count += 1
+    return winget_count, steam_game_count
+
+
 # ── Scanning ────────────────────────────────────────────────────────────────
 
-def scan_winget() -> dict[str, str]:
-    """Return {name: winget_id} for everything winget knows about."""
+def scan_winget() -> list[dict]:
+    """Return installed entries from winget list with exact winget packages plus Steam games."""
     try:
         result = subprocess.run(
             ["winget", "list", "--disable-interactivity"],
             capture_output=True, text=True, timeout=60,
         )
-        apps = {}
+        installable_ids = _scan_exported_winget_ids()
+        apps = []
+        seen: set[tuple[str, str]] = set()
         lines = result.stdout.splitlines()
         # Find the header separator line (dashes)
         sep_idx = None
@@ -379,20 +458,32 @@ def scan_winget() -> dict[str, str]:
             name = line[:id_col].strip()
             winget_id = line[id_col:ver_col].strip()
             if name and winget_id:
-                apps[name] = winget_id
+                steam_appid = _extract_steam_appid(winget_id)
+                if winget_id in installable_ids:
+                    key = ("winget", winget_id)
+                    if key not in seen:
+                        seen.add(key)
+                        apps.append({"name": name, "winget_id": winget_id, "install_type": "winget"})
+                elif steam_appid:
+                    key = ("steam_game", steam_appid)
+                    if key not in seen:
+                        seen.add(key)
+                        apps.append({"name": name, "steam_appid": steam_appid, "install_type": "steam_game"})
         return apps
     except Exception:
-        return {}
+        return []
 
 
 def scan_all(include_windows: bool = False) -> list[dict]:
-    """Return list of winget-installable apps (non-builtins by default)."""
+    """Return reinstallable apps and Steam games (non-builtins by default)."""
     winget_apps = scan_winget()
     apps = []
-    for name, wid in sorted(winget_apps.items(), key=lambda x: x[0].lower()):
-        if not include_windows and _is_windows_builtin(name, wid):
+    for app in sorted(winget_apps, key=lambda x: x["name"].lower()):
+        name = app["name"]
+        wid = app.get("winget_id")
+        if wid and not include_windows and _is_windows_builtin(name, wid):
             continue
-        apps.append({"name": name, "winget_id": wid})
+        apps.append(app)
     return apps
 
 
@@ -571,7 +662,7 @@ class App(tk.Tk):
         self.tree = ttk.Treeview(container, columns=cols, show="headings", selectmode="none")
         self.tree.heading("selected", text="Keep")
         self.tree.heading("name", text="Program Name")
-        self.tree.heading("winget_id", text="Winget ID")
+        self.tree.heading("winget_id", text="Install Target")
         self.tree.column("selected", width=50, anchor="center", stretch=False)
         self.tree.column("name", width=350)
         self.tree.column("winget_id", width=350)
@@ -594,12 +685,13 @@ class App(tk.Tk):
         self.tree.delete(*self.tree.get_children())
         filt = self.filter_var.get().lower()
         for i, app in enumerate(self.apps):
-            if filt and filt not in app["name"].lower() and filt not in app["winget_id"].lower():
+            target = _display_target(app)
+            if filt and filt not in app["name"].lower() and filt not in target.lower():
                 continue
             check = "\u2611" if self.check_vars[i].get() else "\u2610"
             self.tree.insert(
                 "", "end", iid=str(i),
-                values=(check, app["name"], app["winget_id"]),
+                values=(check, app["name"], target),
             )
 
     def _on_tree_click(self, event):
@@ -637,7 +729,7 @@ class App(tk.Tk):
     # ── actions ─────────────────────────────────────────────────────────
 
     def _on_scan(self):
-        self.status_var.set("Scanning installed programs (this may take a moment)...")
+        self.status_var.set("Scanning reinstallable programs and Steam games (this may take a moment)...")
         self.update_idletasks()
 
         def _do_scan():
@@ -651,9 +743,16 @@ class App(tk.Tk):
     def _get_selected_apps(self) -> list[dict]:
         return [app for i, app in enumerate(self.apps) if self.check_vars[i].get()]
 
-    def _do_install_list(self, winget_apps: list[dict]):
-        """Install a list of apps via winget. Runs in a background thread."""
-        results = {"ok": [], "fail": []}
+    def _do_install_list(self, install_apps: list[dict]):
+        """Install a list of apps via winget and Steam. Runs in a background thread."""
+        results = {"winget_ok": [], "winget_fail": [], "steam_ok": [], "steam_fail": []}
+
+        winget_apps = [a for a in install_apps if _install_type(a) == "winget" and a.get("winget_id")]
+        steam_games = [a for a in install_apps if _install_type(a) == "steam_game" and a.get("steam_appid")]
+
+        if steam_games and not any(a.get("winget_id") == STEAM_WINGET_ID for a in winget_apps):
+            winget_apps = [{"name": "Steam", "winget_id": STEAM_WINGET_ID, "install_type": "winget"}] + winget_apps
+
         for app in winget_apps:
             self.after(0, lambda a=app: self.status_var.set(f"Installing {a['name']}..."))
             try:
@@ -666,17 +765,41 @@ class App(tk.Tk):
                     capture_output=True, text=True, timeout=300,
                 )
                 if proc.returncode == 0:
-                    results["ok"].append(app["name"])
+                    results["winget_ok"].append(app["name"])
                 else:
-                    results["fail"].append(app["name"])
+                    results["winget_fail"].append(app["name"])
             except Exception:
-                results["fail"].append(app["name"])
+                results["winget_fail"].append(app["name"])
+
+        if steam_games:
+            try:
+                os.startfile("steam://open/main")
+                time.sleep(3)
+            except Exception:
+                pass
+
+        for app in steam_games:
+            self.after(0, lambda a=app: self.status_var.set(f"Queueing {a['name']} in Steam..."))
+            try:
+                os.startfile(f"steam://install/{app['steam_appid']}")
+                results["steam_ok"].append(app["name"])
+                time.sleep(1)
+            except Exception:
+                results["steam_fail"].append(app["name"])
 
         def _show_results():
-            lines = [f"Installed: {len(results['ok'])}"]
-            if results["fail"]:
-                lines.append(f"Failed: {', '.join(results['fail'])}")
-            self.status_var.set(f"Done — {len(results['ok'])} installed, {len(results['fail'])} failed")
+            lines = []
+            if results["winget_ok"]:
+                lines.append(f"Installed via winget: {len(results['winget_ok'])}")
+            if results["steam_ok"]:
+                lines.append(f"Queued in Steam: {len(results['steam_ok'])}")
+            if results["winget_fail"]:
+                lines.append(f"Winget failed: {', '.join(results['winget_fail'])}")
+            if results["steam_fail"]:
+                lines.append(f"Steam queue failed: {', '.join(results['steam_fail'])}")
+            total_ok = len(results["winget_ok"]) + len(results["steam_ok"])
+            total_fail = len(results["winget_fail"]) + len(results["steam_fail"])
+            self.status_var.set(f"Done — {total_ok} completed, {total_fail} failed")
             messagebox.showinfo("Install Complete", "\n".join(lines))
 
         self.after(0, _show_results)
@@ -756,10 +879,11 @@ class App(tk.Tk):
             )
             return
         data = json.loads(list_file.read_text(encoding="utf-8"))
-        winget_apps = [a for a in data if a.get("winget_id")]
+        winget_count, steam_count = _summarize_install_plan(data)
 
         msg = (
-            f"{len(winget_apps)} apps will be installed via winget, "
+            f"{winget_count} apps will be installed via winget"
+            f" and {steam_count} Steam games will be queued in Steam, "
             "then their AppData and registry will be restored.\n\nProceed?"
         )
         if not messagebox.askyesno("Confirm Full Restore", msg):
@@ -770,7 +894,7 @@ class App(tk.Tk):
 
         def _worker():
             # Step 1: install apps
-            self._do_install_list(winget_apps)
+            self._do_install_list(data)
             # Step 2: restore data
             self.after(0, lambda: self._run_full_restore(dest))
 
@@ -866,19 +990,22 @@ class App(tk.Tk):
         if not path:
             return
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        winget_apps = [a for a in data if a.get("winget_id")]
+        winget_count, steam_count = _summarize_install_plan(data)
 
-        if not winget_apps:
-            messagebox.showwarning("Nothing to install", "No winget-installable apps found in the list.")
+        if not (winget_count or steam_count):
+            messagebox.showwarning("Nothing to install", "No reinstallable apps or Steam games found in the list.")
             return
 
-        msg = f"{len(winget_apps)} apps will be installed via winget.\n\nProceed?"
+        msg = (
+            f"{winget_count} apps will be installed via winget"
+            f" and {steam_count} Steam games will be queued in Steam.\n\nProceed?"
+        )
         if not messagebox.askyesno("Confirm Install", msg):
             return
 
         self.status_var.set("Installing...")
         self.update_idletasks()
-        threading.Thread(target=self._do_install_list, args=(winget_apps,), daemon=True).start()
+        threading.Thread(target=self._do_install_list, args=(data,), daemon=True).start()
 
     # ── Google Drive setup & save/load ───────────────────────────────
 
@@ -973,21 +1100,24 @@ class App(tk.Tk):
                 self.after(0, lambda: self.status_var.set("Drive load failed."))
                 return
 
-            winget_apps = [a for a in data if a.get("winget_id")]
-            if not winget_apps:
+            winget_count, steam_count = _summarize_install_plan(data)
+            if not (winget_count or steam_count):
                 self.after(0, lambda: messagebox.showwarning(
                     "Nothing to install",
-                    "No winget-installable apps found in the Drive list."))
+                    "No reinstallable apps or Steam games found in the Drive list."))
                 return
 
             def _confirm_and_install():
-                msg = f"{len(winget_apps)} apps loaded from Drive.\n\nProceed with install?"
+                msg = (
+                    f"{winget_count} apps and {steam_count} Steam games loaded from Drive.\n\n"
+                    "Proceed with install?"
+                )
                 if not messagebox.askyesno("Confirm Install", msg):
                     self.status_var.set("Install cancelled.")
                     return
                 self.status_var.set("Installing...")
                 threading.Thread(
-                    target=self._do_install_list, args=(winget_apps,), daemon=True
+                    target=self._do_install_list, args=(data,), daemon=True
                 ).start()
 
             self.after(0, _confirm_and_install)
@@ -1031,16 +1161,18 @@ class App(tk.Tk):
             "Use this after a Windows reset to get everything back exactly as it was."
         ),
         "Scan Programs": (
-            "Scans your computer for all programs installed via winget.\n\n"
-            "Windows built-in apps and drivers are filtered out by default "
-            "since they get reinstalled automatically after a reset."
+            "Scans your computer for programs that can actually be restored.\n\n"
+            "Exact winget packages are included automatically, and Steam games "
+            "are detected separately so they can be queued in Steam after the "
+            "Steam client is installed. Windows built-ins and driver components "
+            "are filtered out by default."
         ),
         "Select All / Deselect All": (
             "Quickly check or uncheck every program in the list.\n\n"
             "Click individual rows in the list to toggle specific programs."
         ),
         "Filter": (
-            "Type to instantly filter the list by program name or winget ID.\n\n"
+            "Type to instantly filter the list by program name or install target.\n\n"
             "Useful when you have many programs and want to find a specific one."
         ),
         "Show Windows built-ins": (
@@ -1067,7 +1199,8 @@ class App(tk.Tk):
         ),
         "Load from Drive & Install": (
             "Downloads your previously saved app list from Google Drive "
-            "and automatically installs all the programs via winget.\n\n"
+            "and automatically restores them. Winget apps are installed first, "
+            "then Steam games are queued through Steam.\n\n"
             "Use this after a fresh Windows reset to restore your programs."
         ),
         "Save Local": (
@@ -1078,7 +1211,8 @@ class App(tk.Tk):
         ),
         "Load Local & Install": (
             "Opens a JSON file (previously saved with 'Save Local') and "
-            "automatically installs all the programs via winget.\n\n"
+            "automatically restores them. Winget apps are installed first, "
+            "then Steam games are queued through Steam.\n\n"
             "Point it to your USB drive or wherever you saved the file."
         ),
         "Backup Files": (

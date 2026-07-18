@@ -181,6 +181,11 @@ _IGNORED_ID_PREFIXES = (
     "Microsoft.CorporationII",
     "Microsoft.WinAppRuntime",
     "Microsoft.QuickAssist",
+    "Microsoft.AppInstaller",         # winget / App Installer (ships with Windows)
+    "Microsoft.VCRedist",             # Visual C++ redistributables
+    "Microsoft.GameInput",            # gaming runtime component
+    "Microsoft.CLRTypesSQLServer",    # SQL Server CLR types redistributable
+    "Microsoft.SQLServer",            # SQL Server system/runtime components
     # Drivers & hardware components
     "Intel.",
     "Realtek.",
@@ -207,7 +212,9 @@ _IGNORED_NAME_KEYWORDS = (
     "microsoft update",
     "windows driver",
     "windows sdk",
-    "microsoft visual c++ 20",  # VC++ redistributables
+    "visual c++",               # VC++ redistributables (any version naming)
+    "clr types for sql server",
+    "gameinput",
     "update for windows",
     "security update",
     "hotfix for windows",
@@ -372,7 +379,8 @@ def _scan_exported_winget_ids() -> set[str]:
         if export_path.exists():
             export_path.unlink()
         subprocess.run(
-            ["winget", "export", "-o", str(export_path), "--include-versions", "--disable-interactivity"],
+            ["winget", "export", "-o", str(export_path), "--include-versions",
+             "--accept-source-agreements", "--disable-interactivity"],
             capture_output=True, text=True, timeout=180,
         )
         if not export_path.exists():
@@ -433,7 +441,7 @@ def scan_winget() -> list[dict]:
     """Return installed entries from winget list with exact winget packages plus Steam games."""
     try:
         result = subprocess.run(
-            ["winget", "list", "--disable-interactivity"],
+            ["winget", "list", "--accept-source-agreements", "--disable-interactivity"],
             capture_output=True, text=True, timeout=60,
         )
         installable_ids = _scan_exported_winget_ids()
